@@ -1,0 +1,2 @@
+# Smart-Notification-System-for-Household-Appliances
+Developed an ESP32-based system (C++) that detects the end of various household appliance cycles (e.g., washing machine, microwave) by analyzing environmental noise frequencies (4–5 kHz). Applied FFT signal processing input from a MAX9814 microphone to detect characteristic beeps, triggering a local LED indicator &amp; sending an SMS alert to the user
