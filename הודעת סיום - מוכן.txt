@@ -1,0 +1,90 @@
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include "arduinoFFT.h"
+
+#define SAMPLES 1024             // מספר דגימות ל-FFT
+#define SAMPLING_FREQUENCY 40000 // תדר דגימה ~40kHz (שיהיה מעל התדרים הרלוונטיים)
+#define MIC_PIN 34               // כניסת המיקרופון (ADC)
+#define LED_PIN 26               // הלד שלך
+
+// פרטי רשת
+const char* ssid = "YOUR_WIFI_SSID";
+const char* password = "YOUR_WIFI_PASSWORD";
+
+// פרטי IFTTT
+String IFTTT_Key = "YOUR_IFTTT_KEY";
+String IFTTT_Event = "YOUR_EVENT_NAME"; 
+
+arduinoFFT FFT = arduinoFFT();
+double vReal[SAMPLES];
+double vImag[SAMPLES];
+
+int beepCount = 0;
+unsigned long lastBeepTime = 0;
+
+void setup() {
+  Serial.begin(115200);
+  pinMode(LED_PIN, OUTPUT);
+
+  // התחברות ל-WiFi
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println("WiFi connected!");
+}
+
+void loop() {
+  // קריאת דגימות מהמיקרופון
+  for (int i = 0; i < SAMPLES; i++) {
+    vReal[i] = analogRead(MIC_PIN);
+    vImag[i] = 0;
+    delayMicroseconds(1000000 / SAMPLING_FREQUENCY);
+  }
+
+  // ביצוע FFT
+  FFT.Windowing(vReal, SAMPLES, FFT_WIN_TYP_HAMMING, FFT_FORWARD);
+  FFT.Compute(vReal, vImag, SAMPLES, FFT_FORWARD);
+  FFT.ComplexToMagnitude(vReal, vImag, SAMPLES);
+
+  // ניתוח תדרים
+  int peakIndex = FFT.MajorPeak(vReal, SAMPLES, SAMPLING_FREQUENCY);
+  Serial.print("Peak Frequency: ");
+  Serial.println(peakIndex);
+
+  // בדיקת "צפצוף"
+  if (peakIndex > 2000 && peakIndex < 3500) {  // הצפצצוף הוא בין 2KHZ לבין 3.5 KHZ
+    if (millis() - lastBeepTime > 500) {       // שיהיה מרווח מינימום
+      beepCount++;
+      lastBeepTime = millis();
+      digitalWrite(LED_PIN, HIGH);
+    }
+  } else {
+    digitalWrite(LED_PIN, LOW);
+  }
+
+  // אם זוהו 3 צפצופים
+  if (beepCount >= 3) {
+    sendIFTTT();       // שליחת הודעה
+    beepCount = 0;     // איפוס
+  }
+}
+
+void sendIFTTT() {
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+    String url = "http://maker.ifttt.com/trigger/" + IFTTT_Event + "/with/key/" + IFTTT_Key;
+
+    http.begin(url);
+    http.addHeader("Content-Type", "application/json");
+    int httpResponseCode = http.POST("{\"value1\":\"Beep detected!\"}");
+
+    if (httpResponseCode > 0) {
+      Serial.println("IFTTT Trigger Sent!");
+    } else {
+      Serial.println("Error sending request");
+    }
+    http.end();
+  }
+}
